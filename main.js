@@ -85,8 +85,10 @@ async function handleOpenFile() {
     properties: ['openFile', 'multiSelections'],
     filters: [
       { name: 'All Files', extensions: ['*'] },
-      { name: 'Java', extensions: ['java'] },
-      { name: 'Text', extensions: ['txt', 'md', 'json', 'xml', 'html', 'css', 'js', 'ts', 'py', 'c', 'cpp', 'h'] },
+      { name: 'Text Files', extensions: ['txt', 'log', 'md', 'csv', 'ini', 'cfg', 'conf', 'env', 'gitignore', 'editorconfig'] },
+      { name: 'Web', extensions: ['html', 'htm', 'css', 'js', 'ts', 'jsx', 'tsx', 'json', 'xml', 'svg', 'yaml', 'yml'] },
+      { name: 'Programming', extensions: ['java', 'py', 'c', 'cpp', 'h', 'hpp', 'cs', 'go', 'rs', 'rb', 'php', 'swift', 'kt', 'scala', 'sh', 'bat', 'ps1'] },
+      { name: 'Data', extensions: ['sql', 'toml', 'properties', 'gradle', 'makefile', 'dockerfile'] },
     ],
   });
 
@@ -175,8 +177,9 @@ ipcMain.handle('save-file-as', async (event, { content, defaultName }) => {
     defaultPath: defaultName,
     filters: [
       { name: 'All Files', extensions: ['*'] },
-      { name: 'Java', extensions: ['java'] },
-      { name: 'Text', extensions: ['txt'] },
+      { name: 'Text Files', extensions: ['txt', 'log', 'md', 'csv', 'ini', 'cfg'] },
+      { name: 'Web', extensions: ['html', 'css', 'js', 'ts', 'json', 'xml', 'yaml'] },
+      { name: 'Programming', extensions: ['java', 'py', 'c', 'cpp', 'cs', 'go', 'rs', 'sh'] },
     ],
   });
 
