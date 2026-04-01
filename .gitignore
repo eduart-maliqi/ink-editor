@@ -2,8 +2,12 @@
 Thumbs.db
 *.log
 node_modules/
+dist/
+build/
+out/
 .idea/
 .vscode/
 *.swp
 *.swo
 *~
+*.class

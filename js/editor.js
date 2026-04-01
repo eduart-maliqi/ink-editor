@@ -18,6 +18,63 @@
   const cursorPos = $('#cursorPos');
   const wordCount = $('#wordCount');
   const statusEl = $('#status');
+  const sidebar = $('#sidebar');
+  const fileTree = $('#fileTree');
+  const sidebarTitle = $('#sidebarTitle');
+  const terminalPanel = $('#terminalPanel');
+  const terminalOutput = $('#terminalOutput');
+  const fileLanguage = $('#fileLanguage');
+  const javaStatusEl = $('#javaStatus');
+
+  // Language detection
+  const EXT_LANGUAGES = {
+    '.java': 'Java',
+    '.js': 'JavaScript',
+    '.ts': 'TypeScript',
+    '.py': 'Python',
+    '.html': 'HTML',
+    '.css': 'CSS',
+    '.json': 'JSON',
+    '.xml': 'XML',
+    '.md': 'Markdown',
+    '.c': 'C',
+    '.cpp': 'C++',
+    '.h': 'C Header',
+    '.txt': 'Plain Text',
+    '.sh': 'Shell',
+    '.bat': 'Batch',
+    '.sql': 'SQL',
+    '.yml': 'YAML',
+    '.yaml': 'YAML',
+    '.toml': 'TOML',
+    '.rs': 'Rust',
+    '.go': 'Go',
+    '.rb': 'Ruby',
+    '.php': 'PHP',
+  };
+
+  function getLanguage(filename) {
+    if (!filename) return 'Plain Text';
+    const ext = '.' + filename.split('.').pop().toLowerCase();
+    return EXT_LANGUAGES[ext] || 'Plain Text';
+  }
+
+  // File icons for tree
+  function getFileIcon(name, type) {
+    if (type === 'directory') return '\u{1F4C1}';
+    const ext = name.split('.').pop().toLowerCase();
+    const icons = {
+      java: '\u2615',
+      js: '\u{1F7E8}',
+      ts: '\u{1F7E6}',
+      py: '\u{1F40D}',
+      html: '\u{1F310}',
+      css: '\u{1F3A8}',
+      json: '\u{1F4CB}',
+      md: '\u{1F4DD}',
+    };
+    return icons[ext] || '\u{1F4C4}';
+  }
 
   // Theme
   function loadTheme() {
@@ -33,13 +90,14 @@
   }
 
   // Tabs
-  function createTab(title, content = '') {
+  function createTab(title, content = '', filePath = null) {
     const id = ++tabCounter;
     const tab = {
       id,
       title: title || `Untitled-${id}`,
       content,
       savedContent: content,
+      filePath,
       scrollTop: 0,
       scrollLeft: 0,
       selectionStart: 0,
@@ -48,8 +106,20 @@
     tabs.push(tab);
     switchTab(id);
     renderTabs();
-    saveTabs();
+    saveState();
     return tab;
+  }
+
+  function openFileInTab(filePath, content) {
+    // Check if file is already open
+    const existing = tabs.find((t) => t.filePath === filePath);
+    if (existing) {
+      switchTab(existing.id);
+      return;
+    }
+
+    const name = filePath.split(/[/\\]/).pop();
+    createTab(name, content, filePath);
   }
 
   function closeTab(id) {
@@ -74,11 +144,10 @@
     }
 
     renderTabs();
-    saveTabs();
+    saveState();
   }
 
   function switchTab(id) {
-    // Save current tab state
     if (activeTabId !== null) {
       const current = tabs.find((t) => t.id === activeTabId);
       if (current) {
@@ -100,6 +169,13 @@
     editor.selectionStart = tab.selectionStart;
     editor.selectionEnd = tab.selectionEnd;
     editor.focus();
+
+    // Update language display
+    fileLanguage.textContent = getLanguage(tab.title);
+
+    // Update window title
+    const title = tab.filePath ? `${tab.title} - ${tab.filePath}` : tab.title;
+    document.title = `${title} - Ink Editor`;
 
     updateLineNumbers();
     updateCursorPosition();
@@ -132,7 +208,179 @@
     if (name && name.trim()) {
       tab.title = name.trim();
       renderTabs();
-      saveTabs();
+      saveState();
+    }
+  }
+
+  // File operations
+  async function saveCurrentFile() {
+    const tab = tabs.find((t) => t.id === activeTabId);
+    if (!tab) return;
+
+    tab.content = editor.value;
+
+    if (tab.filePath) {
+      const result = await window.inkAPI.saveFile(tab.filePath, tab.content);
+      if (result.success) {
+        tab.savedContent = tab.content;
+        renderTabs();
+        showSaveStatus();
+      } else {
+        terminalLog(`Error saving file: ${result.error}`, 'error');
+      }
+    } else {
+      await saveCurrentFileAs();
+    }
+  }
+
+  async function saveCurrentFileAs() {
+    const tab = tabs.find((t) => t.id === activeTabId);
+    if (!tab) return;
+
+    tab.content = editor.value;
+    const result = await window.inkAPI.saveFileAs(tab.content, tab.title);
+
+    if (result.success) {
+      tab.filePath = result.filePath;
+      tab.title = result.filePath.split(/[/\\]/).pop();
+      tab.savedContent = tab.content;
+      fileLanguage.textContent = getLanguage(tab.title);
+      renderTabs();
+      showSaveStatus();
+    }
+  }
+
+  // File tree
+  function renderFileTree(entries, container, depth = 0) {
+    entries.forEach((entry) => {
+      const item = document.createElement('div');
+      item.className = 'tree-item';
+      item.style.paddingLeft = `${12 + depth * 16}px`;
+      item.innerHTML = `<span class="icon">${getFileIcon(entry.name, entry.type)}</span>${escapeHtml(entry.name)}`;
+
+      if (entry.type === 'directory') {
+        const children = document.createElement('div');
+        children.className = 'tree-children';
+
+        item.addEventListener('click', () => {
+          children.classList.toggle('open');
+          item.querySelector('.icon').textContent = children.classList.contains('open') ? '\u{1F4C2}' : '\u{1F4C1}';
+        });
+
+        container.appendChild(item);
+
+        if (entry.children && entry.children.length > 0) {
+          renderFileTree(entry.children, children, depth + 1);
+        }
+        container.appendChild(children);
+      } else {
+        item.addEventListener('click', async () => {
+          const result = await window.inkAPI.readFile(entry.path);
+          if (result.success) {
+            openFileInTab(entry.path, result.content);
+          } else {
+            terminalLog(`Error reading file: ${result.error}`, 'error');
+          }
+        });
+        container.appendChild(item);
+      }
+    });
+  }
+
+  // Terminal
+  function terminalLog(message, type = '') {
+    showTerminal();
+    const span = document.createElement('span');
+    if (type) span.className = `out-${type}`;
+    span.textContent = message + '\n';
+    terminalOutput.appendChild(span);
+    terminalOutput.scrollTop = terminalOutput.scrollHeight;
+  }
+
+  function clearTerminal() {
+    terminalOutput.innerHTML = '';
+  }
+
+  function showTerminal() {
+    terminalPanel.classList.remove('hidden');
+  }
+
+  function toggleTerminal() {
+    terminalPanel.classList.toggle('hidden');
+  }
+
+  // Java compiler
+  async function compileJava() {
+    const tab = tabs.find((t) => t.id === activeTabId);
+    if (!tab) return;
+
+    if (!tab.title.endsWith('.java')) {
+      terminalLog('Current file is not a Java file. Save it as .java first.', 'warning');
+      return;
+    }
+
+    // Auto-save before compiling
+    if (!tab.filePath) {
+      terminalLog('Please save the file first (Ctrl+S).', 'warning');
+      return;
+    }
+
+    tab.content = editor.value;
+    await window.inkAPI.saveFile(tab.filePath, tab.content);
+    tab.savedContent = tab.content;
+    renderTabs();
+
+    clearTerminal();
+    terminalLog(`Compiling ${tab.title}...`, 'info');
+
+    const result = await window.inkAPI.compileJava(tab.filePath);
+
+    if (result.success) {
+      terminalLog('Compilation successful!', 'success');
+    } else {
+      terminalLog('Compilation failed:', 'error');
+      if (result.stderr) terminalLog(result.stderr, 'error');
+    }
+
+    return result.success;
+  }
+
+  async function runJava() {
+    const tab = tabs.find((t) => t.id === activeTabId);
+    if (!tab || !tab.filePath || !tab.title.endsWith('.java')) {
+      terminalLog('No compiled Java file to run.', 'warning');
+      return;
+    }
+
+    terminalLog(`\nRunning ${tab.title.replace('.java', '')}...`, 'info');
+    terminalLog('---', 'info');
+
+    const result = await window.inkAPI.runJava(tab.filePath);
+
+    terminalLog('---', 'info');
+    if (result.success) {
+      terminalLog(`Process exited with code ${result.exitCode}`, 'success');
+    } else {
+      if (result.stderr) terminalLog(result.stderr, 'error');
+      terminalLog(`Process exited with code ${result.exitCode}`, 'error');
+    }
+  }
+
+  async function compileAndRunJava() {
+    const success = await compileJava();
+    if (success) {
+      await runJava();
+    }
+  }
+
+  // Check Java installation
+  async function checkJava() {
+    const result = await window.inkAPI.checkJava();
+    if (result.installed) {
+      javaStatusEl.textContent = result.version;
+    } else {
+      javaStatusEl.textContent = 'Java not found';
+      javaStatusEl.style.color = 'var(--warning)';
     }
   }
 
@@ -149,7 +397,6 @@
     gutter.innerHTML = html;
   }
 
-  // Sync gutter scroll with editor
   function syncGutterScroll() {
     gutter.scrollTop = editor.scrollTop;
   }
@@ -210,7 +457,6 @@
     editor.selectionStart = pos;
     editor.selectionEnd = pos + query.length;
 
-    // Scroll into view
     const textBefore = editor.value.substring(0, pos);
     const lineNumber = textBefore.split('\n').length;
     const lineHeight = parseFloat(getComputedStyle(editor).lineHeight);
@@ -262,8 +508,8 @@
     }
   }
 
-  // Auto-save to localStorage
-  function saveTabs() {
+  // State persistence
+  function saveState() {
     const current = tabs.find((t) => t.id === activeTabId);
     if (current) {
       current.content = editor.value;
@@ -274,6 +520,7 @@
       title: t.title,
       content: t.content,
       savedContent: t.savedContent,
+      filePath: t.filePath,
     }));
 
     localStorage.setItem('ink-tabs', JSON.stringify(data));
@@ -281,7 +528,7 @@
     localStorage.setItem('ink-tabCounter', tabCounter);
   }
 
-  function loadTabs() {
+  function loadState() {
     try {
       const data = JSON.parse(localStorage.getItem('ink-tabs'));
       const savedActiveTab = parseInt(localStorage.getItem('ink-activeTab'), 10);
@@ -302,7 +549,7 @@
         return;
       }
     } catch (e) {
-      // Ignore parse errors
+      // Ignore
     }
 
     createTab();
@@ -317,19 +564,17 @@
 
   // Tab key handling
   function handleTab(e) {
-    if (e.key === 'Tab') {
+    if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey) {
       e.preventDefault();
       const start = editor.selectionStart;
       const end = editor.selectionEnd;
 
       if (start === end) {
-        // Insert two spaces
         const before = editor.value.substring(0, start);
         const after = editor.value.substring(end);
         editor.value = before + '  ' + after;
         editor.selectionStart = editor.selectionEnd = start + 2;
       } else {
-        // Indent/unindent selected lines
         const text = editor.value;
         const lineStart = text.lastIndexOf('\n', start - 1) + 1;
         const lineEnd = text.indexOf('\n', end);
@@ -364,7 +609,6 @@
       const closing = PAIRS[char];
 
       if (start !== end) {
-        // Wrap selection
         e.preventDefault();
         const selected = editor.value.substring(start, end);
         const before = editor.value.substring(0, start);
@@ -376,9 +620,7 @@
         return;
       }
 
-      // Auto-close
       if (char === closing && editor.value[start] === closing) {
-        // Skip over existing closing char
         e.preventDefault();
         editor.selectionStart = editor.selectionEnd = start + 1;
         return;
@@ -392,7 +634,6 @@
       onEditorInput();
     }
 
-    // Handle backspace for paired chars
     if (e.key === 'Backspace' && start === end && start > 0) {
       const prev = editor.value[start - 1];
       const next = editor.value[start];
@@ -406,7 +647,6 @@
       }
     }
 
-    // Handle Enter for auto-indent
     if (e.key === 'Enter') {
       const text = editor.value;
       const lineStart = text.lastIndexOf('\n', start - 1) + 1;
@@ -448,13 +688,11 @@
     debouncedSave();
   }
 
-  // Debounced save
   let saveTimeout;
   function debouncedSave() {
     clearTimeout(saveTimeout);
     saveTimeout = setTimeout(() => {
-      saveTabs();
-      showSaveStatus();
+      saveState();
     }, 500);
   }
 
@@ -466,6 +704,14 @@
       e.preventDefault();
       createTab();
     }
+    if (mod && e.key === 'o' && !e.shiftKey) {
+      e.preventDefault();
+      window.inkAPI.openFile();
+    }
+    if (mod && e.shiftKey && e.key === 'O') {
+      e.preventDefault();
+      window.inkAPI.openFolder();
+    }
     if (mod && e.key === 'w') {
       e.preventDefault();
       closeTab(activeTabId);
@@ -474,18 +720,30 @@
       e.preventDefault();
       toggleFindBar();
     }
-    if (mod && e.key === 's') {
+    if (mod && e.key === 's' && !e.shiftKey) {
       e.preventDefault();
-      const tab = tabs.find((t) => t.id === activeTabId);
-      if (tab) {
-        tab.content = editor.value;
-        tab.savedContent = editor.value;
-        saveTabs();
-        renderTabs();
-        showSaveStatus();
-      }
+      saveCurrentFile();
     }
-    // Switch tabs with Ctrl+Tab
+    if (mod && e.shiftKey && e.key === 'S') {
+      e.preventDefault();
+      saveCurrentFileAs();
+    }
+    if (mod && e.key === 'b') {
+      e.preventDefault();
+      compileJava();
+    }
+    if (mod && e.key === 'r') {
+      e.preventDefault();
+      runJava();
+    }
+    if (e.key === 'F5') {
+      e.preventDefault();
+      compileAndRunJava();
+    }
+    if (mod && e.key === '`') {
+      e.preventDefault();
+      toggleTerminal();
+    }
     if (mod && e.key === 'Tab') {
       e.preventDefault();
       const idx = tabs.findIndex((t) => t.id === activeTabId);
@@ -494,11 +752,55 @@
         : (idx + 1) % tabs.length;
       switchTab(tabs[next].id);
     }
-
     if (e.key === 'Escape' && !findBar.classList.contains('hidden')) {
       findBar.classList.add('hidden');
       editor.focus();
     }
+  }
+
+  // Terminal resize
+  function initTerminalResize() {
+    const handle = $('#terminalResize');
+    let startY, startHeight;
+
+    handle.addEventListener('mousedown', (e) => {
+      startY = e.clientY;
+      startHeight = terminalPanel.offsetHeight;
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+      e.preventDefault();
+    });
+
+    function onMouseMove(e) {
+      const delta = startY - e.clientY;
+      const newHeight = Math.max(80, Math.min(window.innerHeight * 0.6, startHeight + delta));
+      terminalPanel.style.height = newHeight + 'px';
+    }
+
+    function onMouseUp() {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    }
+  }
+
+  // Drag and drop files
+  function initDragDrop() {
+    document.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
+    document.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      for (const file of e.dataTransfer.files) {
+        const result = await window.inkAPI.readFile(file.path);
+        if (result.success) {
+          openFileInTab(file.path, result.content);
+        }
+      }
+    });
   }
 
   // Utility
@@ -525,8 +827,16 @@
   document.addEventListener('keydown', handleShortcuts);
 
   $('#addTab').addEventListener('click', () => createTab());
+  $('#openFile').addEventListener('click', () => window.inkAPI.openFile());
+  $('#openFolder').addEventListener('click', () => window.inkAPI.openFolder());
+  $('#saveFile').addEventListener('click', () => saveCurrentFile());
+  $('#compileJava').addEventListener('click', () => compileAndRunJava());
+  $('#toggleTerminal').addEventListener('click', toggleTerminal);
   $('#toggleTheme').addEventListener('click', toggleTheme);
   $('#toggleFind').addEventListener('click', toggleFindBar);
+  $('#clearTerminal').addEventListener('click', clearTerminal);
+  $('#closeTerminal').addEventListener('click', () => terminalPanel.classList.add('hidden'));
+  $('#closeSidebar').addEventListener('click', () => sidebar.classList.add('hidden'));
 
   findInput.addEventListener('input', performFind);
   $('#findNext').addEventListener('click', findNext);
@@ -548,8 +858,54 @@
     }
   });
 
+  // IPC listeners from main process menu
+  if (window.inkAPI) {
+    window.inkAPI.onMenuNewFile(() => createTab());
+    window.inkAPI.onMenuSave(() => saveCurrentFile());
+    window.inkAPI.onMenuSaveAs(() => saveCurrentFileAs());
+    window.inkAPI.onMenuFind(() => toggleFindBar());
+    window.inkAPI.onMenuToggleTheme(() => toggleTheme());
+    window.inkAPI.onMenuToggleTerminal(() => toggleTerminal());
+    window.inkAPI.onMenuCompileJava(() => compileJava());
+    window.inkAPI.onMenuRunJava(() => runJava());
+    window.inkAPI.onMenuCompileRunJava(() => compileAndRunJava());
+
+    window.inkAPI.onFileOpened((data) => {
+      openFileInTab(data.filePath, data.content);
+    });
+
+    window.inkAPI.onFolderOpened((data) => {
+      sidebar.classList.remove('hidden');
+      const dirName = data.dirPath.split(/[/\\]/).pop();
+      sidebarTitle.textContent = dirName;
+      fileTree.innerHTML = '';
+      renderFileTree(data.entries, fileTree);
+    });
+
+    window.inkAPI.onJavaStdout((data) => {
+      const span = document.createElement('span');
+      span.textContent = data;
+      terminalOutput.appendChild(span);
+      terminalOutput.scrollTop = terminalOutput.scrollHeight;
+    });
+
+    window.inkAPI.onJavaStderr((data) => {
+      const span = document.createElement('span');
+      span.className = 'out-error';
+      span.textContent = data;
+      terminalOutput.appendChild(span);
+      terminalOutput.scrollTop = terminalOutput.scrollHeight;
+    });
+  }
+
   // Init
   loadTheme();
-  loadTabs();
+  loadState();
+  initTerminalResize();
+  initDragDrop();
   editor.focus();
+
+  if (window.inkAPI) {
+    checkJava();
+  }
 })();
