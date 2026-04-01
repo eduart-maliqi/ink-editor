@@ -84,11 +84,7 @@ async function handleOpenFile() {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openFile', 'multiSelections'],
     filters: [
-      { name: 'All Files', extensions: ['*'] },
-      { name: 'Text Files', extensions: ['txt', 'log', 'md', 'csv', 'ini', 'cfg', 'conf', 'env', 'gitignore', 'editorconfig'] },
-      { name: 'Web', extensions: ['html', 'htm', 'css', 'js', 'ts', 'jsx', 'tsx', 'json', 'xml', 'svg', 'yaml', 'yml'] },
-      { name: 'Programming', extensions: ['java', 'py', 'c', 'cpp', 'h', 'hpp', 'cs', 'go', 'rs', 'rb', 'php', 'swift', 'kt', 'scala', 'sh', 'bat', 'ps1'] },
-      { name: 'Data', extensions: ['sql', 'toml', 'properties', 'gradle', 'makefile', 'dockerfile'] },
+      { name: 'All Supported Files', extensions: ['*'] },
     ],
   });
 
@@ -177,9 +173,6 @@ ipcMain.handle('save-file-as', async (event, { content, defaultName }) => {
     defaultPath: defaultName,
     filters: [
       { name: 'All Files', extensions: ['*'] },
-      { name: 'Text Files', extensions: ['txt', 'log', 'md', 'csv', 'ini', 'cfg'] },
-      { name: 'Web', extensions: ['html', 'css', 'js', 'ts', 'json', 'xml', 'yaml'] },
-      { name: 'Programming', extensions: ['java', 'py', 'c', 'cpp', 'cs', 'go', 'rs', 'sh'] },
     ],
   });
 
